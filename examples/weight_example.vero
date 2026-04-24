@@ -1,0 +1,92 @@
+// weight_example.vero — Demonstrates the Vero-lite weight block syntax.
+//
+// Weight names that map directly to SeckanNetConfig fields at runtime:
+//   plasticity_lr, kan_init_scale, hidden_ring_weight, input_to_hidden_mean,
+//   input_to_hidden_jitter, target_spike_rate, kan_y_clip
+//
+// Compile: cargo run -q -p vero_cli -- compile examples/weight_example.vero
+// Run:     cargo run -q -p seckan_cli -- --program examples/weight_example.seckan.json
+
+model char_mvp {
+    hidden_size: 256,
+    edges_per_readout: 4,
+    ticks_per_char: 6,
+    p_spike: 0.35,
+    pulse_current: 3.0,
+    plasticity_every: 64,
+    lr: 0.05,
+    graph_seed: 0x5345434B414E5F30,
+    hidden_ring_weight_scale: 0.2,
+    input_to_hidden_weight_mean: 0.5,
+    input_to_hidden_weight_jitter: 0.1,
+    kan_n_grid: 5,
+    kan_degree: 3,
+    kan_init_scale: 0.3,
+    cppn_hidden: 12,
+    cppn_seed: 0x43505041_4E5F4D32,
+}
+
+phases {
+    inference_topology_locked: true,
+    plasticity_topology_mutable: true,
+}
+
+boundaries {
+    membrane_sum_lower: 0,
+    membrane_sum_upper: 5000000,
+    loss_lower: 0,
+    loss_upper: 50000,
+}
+
+// Named, type-annotated weight declarations.
+// These override the model block values at runtime.
+
+weight plasticity_lr {
+    value: 0.07,
+    verified: bounds(0.0, 1.0),
+    truth: provable,
+    harmony: coherent,
+    time: now,
+    place: substrate.current,
+    compassion: harmony,
+}
+
+weight kan_init_scale {
+    value: 0.25,
+    verified: bounds(0.0, 2.0),
+    truth: provable,
+    harmony: coherent,
+    time: now,
+    place: substrate.current,
+    compassion: harmony,
+}
+
+weight hidden_ring_weight {
+    value: 0.15,
+    verified: bounds(-1.0, 1.0),
+    truth: provable,
+    harmony: coherent,
+    time: now,
+    place: substrate.current,
+    compassion: harmony,
+}
+
+weight input_to_hidden_mean {
+    value: 0.55,
+    verified: bounds(0.0, 2.0),
+    truth: provable,
+    harmony: coherent,
+    time: now,
+    place: substrate.current,
+    compassion: harmony,
+}
+
+weight target_spike_rate {
+    value: 0.03,
+    verified: bounds(0.0, 1.0),
+    truth: provable,
+    harmony: coherent,
+    time: now,
+    place: substrate.current,
+    compassion: harmony,
+}

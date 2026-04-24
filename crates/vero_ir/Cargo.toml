@@ -1,0 +1,11 @@
+[package]
+name = "vero_ir"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Vero intermediate representation — the compiled output of Vero source files"
+repository.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

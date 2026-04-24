@@ -1,0 +1,23 @@
+# Vero-lite example: char-level SECKAN MVP
+
+model char_mvp {
+  hidden_size: 256
+  ticks_per_char: 6
+  p_spike: 0.35
+  pulse_current: 3.0
+  plasticity_every: 64
+  lr: 0.05
+}
+
+phases {
+  inference_topology_locked: true
+  plasticity_topology_mutable: true
+}
+
+boundaries {
+  membrane_sum_lower: 0
+  membrane_sum_upper: 5000000
+  loss_lower: 0
+  loss_upper: 50000
+}
+

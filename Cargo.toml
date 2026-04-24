@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/vero_ir",
+  "crates/vero_cli",
+]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+license = "MIT OR Apache-2.0"
+authors = ["T. Billy Ekkerd <admin@unifiedsystemschain.com>"]
+repository = "https://github.com/U-S-C-Labs/vero"

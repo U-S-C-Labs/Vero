@@ -1,0 +1,15 @@
+[package]
+name = "vero"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Vero language compiler — compile .vero source files to IR"
+repository.workspace = true
+
+[[bin]]
+name = "vero"
+path = "src/main.rs"
+
+[dependencies]
+vero_ir = { path = "../vero_ir" }
+serde_json = "1"

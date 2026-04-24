@@ -1,0 +1,45 @@
+// SECKAN genome + rule example — M4 feature demonstration
+
+model char_mvp {
+    hidden_size: 128
+    cppn_hidden: 12
+    cppn_seed: 0x435050414E5F4D32
+}
+
+genome {
+    population_size: 30
+    speciation_threshold: 3.0
+    survival_rate: 0.2
+    crossover_rate: 0.75
+    weight_perturb_rate: 0.8
+    weight_perturb_sigma: 0.1
+    add_node_prob: 0.03
+    add_edge_prob: 0.05
+    stagnation_limit: 15
+    elite_per_species: 1
+    seed: 0xDEADBEEF
+    truth: provable
+    harmony: coherent
+}
+
+rule hebbian {
+    expression: delta_w = lr * pre * post
+    truth: provable
+    harmony: coherent
+}
+
+rule rate_regulation {
+    expression: delta_w = -0.01 * (rate - target_rate)
+    truth: provable
+    harmony: coherent
+}
+
+weight plasticity_lr {
+    value: 0.05
+    verified: bounds(0.0, 1.0)
+    truth: provable
+    harmony: coherent
+    time: now
+    place: substrate.current
+    compassion: harmony
+}
