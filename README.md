@@ -1,5 +1,7 @@
 # Vero
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19720711.svg)](https://doi.org/10.5281/zenodo.19720711)
+
 **A coherence-guaranteed language for neural architecture specification.**
 
 Vero is a declarative language designed to describe neural network configurations with formal coherence guarantees. Every Vero program is verified at compile time against a set of structural laws before it can be lowered to an executable representation. If the program violates coherence, it does not compile — coherence is not optional.
@@ -142,6 +144,23 @@ Independent Systems Research · USC Labs
 - ORCID: [0009-0002-5787-3980](https://orcid.org/0009-0002-5787-3980)
 - Web: [unifiedsystemschain.com](https://unifiedsystemschain.com)
 - Email: admin@unifiedsystemschain.com
+
+---
+
+## Citation
+
+If you use Vero in your research, please cite:
+
+```bibtex
+@software{ekkerd2026vero,
+  author    = {Ekkerd, T. Billy},
+  title     = {Vero: A Coherence-Guaranteed Language for Neural Architecture Specification},
+  year      = {2026},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.19720711},
+  url       = {https://doi.org/10.5281/zenodo.19720711}
+}
+```
 
 ---
 
