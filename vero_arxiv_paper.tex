@@ -1,0 +1,498 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage{parskip}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  urlcolor=black,
+  citecolor=black,
+  pdftitle={Vero: A Coherence-Guaranteed Language for Neural Architecture Specification},
+  pdfauthor={T. Billy Ekkerd}
+}
+
+% Vero code listings
+\definecolor{veroblue}{RGB}{60,80,140}
+\definecolor{verogrey}{RGB}{120,120,130}
+\definecolor{verodark}{RGB}{20,20,30}
+
+\lstdefinelanguage{Vero}{
+  keywords={model,nodes,edges,phases,boundaries,weight,genome,rule,true,false,provable,unprovable,coherent,dissonant,now,substrate},
+  keywordstyle=\color{veroblue}\bfseries,
+  comment=[l]{\#},
+  comment=[l]{//},
+  commentstyle=\color{verogrey}\itshape,
+  stringstyle=\color{veroblue},
+  basicstyle=\ttfamily\small,
+  showstringspaces=false,
+  breaklines=true,
+  frame=single,
+  rulecolor=\color{verogrey!40},
+  backgroundcolor=\color{gray!5},
+  numbers=left,
+  numberstyle=\tiny\color{verogrey},
+  numbersep=6pt,
+}
+
+\title{\textbf{Vero: A Coherence-Guaranteed Language\\for Neural Architecture Specification}}
+
+\author{
+  T.\ Billy Ekkerd \\
+  USC Labs --- Unified Systems Chain \\
+  Johannesburg, South Africa \\
+  \texttt{admin@unifiedsystemschain.com} \\
+  ORCID: 0009-0002-5787-3980
+}
+
+\date{April 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+We present \textbf{Vero}, a declarative language for specifying neural network architectures
+with compile-time coherence guarantees. Unlike existing configuration formats such as JSON or
+YAML, which carry no structural guarantees, a Vero program cannot be compiled if it violates
+coherence. Every declaration in Vero is annotated with four base properties --- \emph{truth},
+\emph{harmony}, \emph{time}, and \emph{place} --- which are verified statically before the
+program is lowered to an executable intermediate representation. Dissonant declarations do not
+produce warnings; they produce compile errors. We describe the language design, its type system,
+the coherence rules, and the current implementation of the Vero Lite compiler, which lowers
+Vero source to a JSON intermediate representation consumed by downstream neural runtimes.
+The full compiler, specification, and examples are released as open source under the
+MIT/Apache-2.0 dual license at \url{https://github.com/U-S-C-Labs/Vero}.
+\end{abstract}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Introduction}
+% ─────────────────────────────────────────────────────────────────────────────
+
+Neural architecture specification is a largely unsolved problem. Frameworks such as
+PyTorch~\cite{paszke2019pytorch} and JAX~\cite{bradbury2018jax} describe architectures
+imperatively in Python. Configuration formats such as JSON, YAML, and TOML describe
+them declaratively but carry no guarantees --- a configuration file that specifies an
+incoherent architecture is syntactically identical to a valid one until runtime.
+
+The consequences are practical: silent misconfiguration, weight bounds violations that
+propagate through training, and architecture descriptions that cannot be reasoned about
+formally. There is no notion of a \emph{wrong} weight annotation in these formats, because
+the formats have no semantics beyond key-value storage.
+
+Vero takes a different position: \textbf{a neural architecture specification that cannot be
+verified is not a specification}. It is data.
+
+The language draws its design philosophy from three observations:
+
+\begin{enumerate}
+  \item Every neural parameter has a \emph{location} (where in the substrate it operates),
+        a \emph{moment} (the phase of computation in which it is valid), a \emph{truth value}
+        (whether its value can be proven consistent with its context), and a \emph{harmony
+        state} (whether it coheres structurally with the system around it).
+
+  \item These four properties --- truth, harmony, time, place --- are not metadata.
+        They are \emph{types}. The compiler's primary obligation is to verify them.
+
+  \item A declaration that is structurally dissonant with its context should not compile.
+        Not as a warning. As an impossibility.
+\end{enumerate}
+
+This paper describes the design and implementation of Vero Lite, the current release of the
+language. Section~\ref{sec:design} describes the language design and four-property type system.
+Section~\ref{sec:grammar} gives the grammar and worked examples. Section~\ref{sec:coherence}
+defines the coherence rules enforced at compile time. Section~\ref{sec:ir} describes the
+intermediate representation. Section~\ref{sec:implementation} covers the implementation.
+Section~\ref{sec:related} situates Vero relative to related work.
+Section~\ref{sec:conclusion} concludes.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Language Design}
+\label{sec:design}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{The Four Base Properties}
+
+Every declaration in Vero carries four irreducible properties:
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Property} & \textbf{Values} & \textbf{Meaning} \\
+\midrule
+\texttt{truth}   & \texttt{provable} $\mid$ \texttt{unprovable} & Is the value consistent with its context? \\
+\texttt{harmony} & \texttt{coherent} $\mid$ \texttt{dissonant}  & Does the declaration cohere structurally? \\
+\texttt{time}    & \texttt{now}                                  & The computational phase of validity \\
+\texttt{place}   & \texttt{substrate\_current}                   & The substrate location of operation \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+These are not optional annotations. A Vero declaration without all four properties cannot
+be well-typed. The compiler verifies each before lowering to the IR.
+
+\subsection{Coherence as a Type Constraint}
+
+In conventional type systems, a type error means a value has the wrong shape.
+In Vero, a coherence error means a declaration is \emph{structurally inconsistent with its
+context} --- independent of whether its values are numerically valid.
+
+The key coherence contracts are:
+
+\begin{itemize}
+  \item \textbf{Truth-Harmony contract}: a declaration with \texttt{truth: unprovable} cannot
+        simultaneously claim \texttt{harmony: coherent}. An unprovable value cannot assert
+        structural coherence.
+  \item \textbf{Dissonance rejection}: \texttt{harmony: dissonant} does not compile, in any
+        context. Dissonance is not a valid operational state.
+  \item \textbf{Bounds contract}: the declared \texttt{value} must satisfy
+        $\texttt{lower} \leq \texttt{value} \leq \texttt{upper}$. A value that violates its
+        own declared bounds is incoherent by definition.
+  \item \textbf{Identity contract}: every declaration must have a non-empty, non-default name.
+        Anonymous declarations cannot be reasoned about.
+\end{itemize}
+
+These rules are checked exhaustively --- all violations are reported, not just the first.
+
+\subsection{Design Principle: Boundary Honesty}
+
+Vero encodes a principle we term \emph{boundary honesty}: a measurement or computation that
+falls outside its declared domain must not return an incorrect finite value. It must return
+infinity or report the measurement as unknown.
+
+This is formalised in the \texttt{boundaries} block, which declares explicit lower and upper
+bounds for runtime measurements. Any measurement outside these bounds is reported as
+infinity, not clamped or silently discarded. This is a direct expression of Law 17 of the
+Universal Laws specification~\cite{ekkerd2026laws} encoded in the language semantics:
+\emph{an instrument that reports infinity at its boundary is not wrong --- it has reached its edge.}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Grammar and Examples}
+\label{sec:grammar}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Block Structure}
+
+Vero uses a block-structured syntax. A program is a sequence of top-level blocks:
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Block} & \textbf{Purpose} \\
+\midrule
+\texttt{model \{ \}}      & Architecture hyperparameters \\
+\texttt{nodes \{ \}}      & Node-level overrides \\
+\texttt{edges \{ \}}      & Edge-level overrides \\
+\texttt{phases \{ \}}     & Phase scheduling constraints \\
+\texttt{boundaries \{ \}} & Runtime measurement domains \\
+\texttt{weight \{ \}}     & Named, annotated weight declarations \\
+\texttt{genome \{ \}}     & Evolutionary search configuration \\
+\texttt{rule \{ \}}       & Symbolic plasticity rules \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Comments are introduced with \texttt{\#} or \texttt{//} and extend to end of line.
+Key-value lines take the form \texttt{key: value}.
+
+\subsection{Minimal Example}
+
+\begin{lstlisting}[language=Vero, caption={Minimal Vero program specifying a spiking network configuration.}]
+# Vero-lite: minimal character-level model
+
+model char_mvp {
+  hidden_size:      256
+  ticks_per_char:   6
+  p_spike:          0.35
+  pulse_current:    3.0
+  plasticity_every: 64
+  lr:               0.05
+}
+
+phases {
+  inference_topology_locked:   true
+  plasticity_topology_mutable: true
+}
+
+boundaries {
+  membrane_sum_lower: 0
+  membrane_sum_upper: 5000000
+  loss_lower:         0
+  loss_upper:         50000
+}
+\end{lstlisting}
+
+\subsection{Weight Declaration with Coherence Annotations}
+
+\begin{lstlisting}[language=Vero, caption={Weight declaration with full coherence annotation. A value outside declared bounds, or an unprovable value claiming coherent harmony, will not compile.}]
+weight plasticity_lr {
+  value:    0.07
+  verified: bounds(0.0, 1.0)
+  truth:    provable
+  harmony:  coherent
+  time:     now
+  place:    substrate.current
+  compassion: harmony
+}
+\end{lstlisting}
+
+\subsection{Genome Declaration}
+
+\begin{lstlisting}[language=Vero, caption={Genome block specifying evolutionary search parameters.}]
+genome {
+  population_size:       50
+  speciation_threshold:  3.0
+  survival_rate:         0.2
+  crossover_rate:        0.75
+  weight_perturb_rate:   0.8
+  weight_perturb_sigma:  0.1
+  add_node_prob:         0.03
+  add_edge_prob:         0.05
+  stagnation_limit:      15
+  elite_per_species:     1
+  seed:                  0
+  truth:    provable
+  harmony:  coherent
+}
+\end{lstlisting}
+
+\subsection{B-Spline Edge Configuration}
+
+KAN edges~\cite{liu2024kan} use B-spline basis functions. The number of control points per
+edge is $n_\text{ctrl} = G + k$, where $G$ is the number of interior grid intervals
+(\texttt{kan\_n\_grid}) and $k$ is the polynomial degree (\texttt{kan\_degree}):
+
+\begin{center}
+\begin{tabular}{cccl}
+\toprule
+$G$ & $k$ & $n_\text{ctrl}$ & Notes \\
+\midrule
+5 & 3 & 8  & Default (cubic) \\
+8 & 3 & 11 & Higher resolution \\
+1 & 1 & 2  & Minimal (linear) \\
+7 & 2 & 9  & Quadratic \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Coherence Rules}
+\label{sec:coherence}
+% ─────────────────────────────────────────────────────────────────────────────
+
+The coherence checker runs over the full program before any IR is emitted.
+It returns \emph{all} violations, not just the first. A program with any coherence
+violation produces no output.
+
+\subsection{Weight Coherence}
+
+For each \texttt{WeightDecl}:
+
+\begin{enumerate}
+  \item $\texttt{lower} \leq \texttt{value} \leq \texttt{upper}$
+  \item $\neg(\texttt{truth} = \texttt{unprovable} \wedge \texttt{harmony} = \texttt{coherent})$
+  \item $\texttt{harmony} \neq \texttt{dissonant}$
+  \item $\texttt{name} \neq \varnothing \wedge \texttt{name} \neq \texttt{"unnamed"}$
+\end{enumerate}
+
+\subsection{Genome Coherence}
+
+For each \texttt{GenomeDecl}:
+
+\begin{enumerate}
+  \item $\texttt{harmony} \neq \texttt{dissonant}$
+  \item $\texttt{population\_size} > 0$
+  \item $0 < \texttt{survival\_rate} \leq 1.0$
+\end{enumerate}
+
+\subsection{Rule Coherence}
+
+For each \texttt{RuleDecl}:
+
+\begin{enumerate}
+  \item $\texttt{name} \neq \varnothing \wedge \texttt{name} \neq \texttt{"unnamed"}$
+  \item $\texttt{harmony} \neq \texttt{dissonant}$
+  \item $\texttt{expression} \neq \varnothing$
+\end{enumerate}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Intermediate Representation}
+\label{sec:ir}
+% ─────────────────────────────────────────────────────────────────────────────
+
+Vero Lite compiles to a JSON intermediate representation (IR). The top-level structure is:
+
+\begin{lstlisting}[language={},caption={Vero IR top-level structure (JSON).}]
+{
+  "version": 1,
+  "model":      { "kind": "char_mvp", ... },
+  "phases":     { "inference_topology_locked": true, ... },
+  "boundaries": { "membrane_sum": {...}, "loss": {...} },
+  "weights":    [ { "name": "...", "value": ..., ... } ],
+  "genome":     { ... } | null,
+  "rules":      [ { "name": "...", "expression": "..." } ]
+}
+\end{lstlisting}
+
+The IR is consumed by runtime backends. The current backend targets CPU execution via a
+spiking neural network runtime implemented in Rust. A GPU backend (WebGPU/wgpu) is under
+development. The IR design intentionally does not embed backend-specific information ---
+backend selection and lowering are downstream concerns, not language concerns.
+
+The IR carries all four Vero base annotations (\texttt{truth}, \texttt{harmony},
+\texttt{time}, \texttt{place}) on each \texttt{WeightDecl} and \texttt{GenomeDecl}.
+These annotations are preserved through lowering so that runtime systems can inspect
+and enforce them independently of the compiler.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Implementation}
+\label{sec:implementation}
+% ─────────────────────────────────────────────────────────────────────────────
+
+The Vero Lite compiler is implemented in Rust (edition 2024) as two crates:
+
+\begin{itemize}
+  \item \textbf{\texttt{vero\_ir}} --- the intermediate representation types and
+        coherence checker (\textasciitilde{}250 lines).
+  \item \textbf{\texttt{vero}} --- the parser, compiler CLI, and lowering pass
+        (\textasciitilde{}450 lines).
+\end{itemize}
+
+The compiler binary is invoked as:
+
+\begin{lstlisting}[language=bash]
+vero compile <input.vero> --out <output.json>
+\end{lstlisting}
+
+The parser is a single-pass line-oriented parser with no external parser generator
+dependency. This is a deliberate design choice: the grammar is simple enough that a
+hand-written parser is easier to audit than a generated one, and auditability is a
+first-class concern for a language intended for safety-critical neural governance.
+
+The coherence checker uses Rust's type system extensively --- the \texttt{TruthAnnotation}
+and \texttt{HarmonyAnnotation} enums make invalid combinations representable but
+statically detectable, and the checker exhaustively matches against them. All violations
+are collected into a \texttt{Vec<CoherenceError>} and returned together, so authors see
+all problems at once rather than fixing them one at a time.
+
+The full implementation, specification, and examples are available at:\\
+\url{https://github.com/U-S-C-Labs/Vero}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Related Work}
+\label{sec:related}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\textbf{Neural architecture description formats.}
+ONNX~\cite{bai2019onnx} provides a portable format for neural network graphs but
+focuses on inference-time exchange rather than specification-time verification.
+It carries no coherence guarantees. Keras configuration files and PyTorch
+\texttt{state\_dict} exports are similarly unverified serialisation formats.
+
+\textbf{Formal verification of neural networks.}
+A body of work applies formal methods to verify \emph{properties of trained networks}
+(robustness, fairness, safety bounds) post-hoc~\cite{katz2017reluplex,liu2021algorithms}.
+Vero addresses a different problem: verifying the \emph{specification} of the architecture
+before any training or execution occurs.
+
+\textbf{Verified systems programming.}
+Verus~\cite{lattuada2023verus} extends Rust with SMT-backed proof obligations for
+systems code. Vero draws philosophical inspiration from Verus but operates at a higher
+level of abstraction --- it verifies architectural coherence rather than memory safety
+or functional correctness of general programs.
+
+\textbf{Domain-specific languages for ML.}
+Halide~\cite{ragan2013halide} and TVM~\cite{chen2018tvm} provide DSLs for specifying
+and optimising tensor computations. These languages are concerned with computational
+efficiency; they have no notion of architectural coherence as a first-class property.
+
+To our knowledge, no existing language treats neural architecture \emph{coherence} ---
+the structural consistency of declarations with their declared truth, harmony, temporal,
+and spatial context --- as a compile-time type constraint.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Conclusion}
+\label{sec:conclusion}
+% ─────────────────────────────────────────────────────────────────────────────
+
+We have presented Vero, a declarative language for neural architecture specification
+with compile-time coherence guarantees. The core contribution is the identification of
+four irreducible properties of neural declarations --- truth, harmony, time, and place ---
+and their formalisation as compile-time type constraints enforced by the coherence checker
+before any IR is emitted.
+
+The current release, Vero Lite, implements the parser, coherence checker, and JSON IR
+lowering pass in approximately 700 lines of auditable Rust. It is the language layer of
+a larger research programme into coherence-guaranteed neural architectures. Subsequent
+work will extend the language with dependent types over the four base properties, formal
+proof obligations on weight declarations, and a full \texttt{VeroMind} genome specification
+for spatially-embedded neuroevolution.
+
+The design principle underlying all of this work is simple:
+\emph{a system that cannot verify its own coherence cannot be trusted.}
+Vero is an attempt to make that verification the first thing the compiler does,
+not the last.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\begin{thebibliography}{99}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\bibitem{paszke2019pytorch}
+A.\ Paszke et al.,
+``PyTorch: An Imperative Style, High-Performance Deep Learning Library,''
+\emph{Advances in Neural Information Processing Systems}, 2019.
+
+\bibitem{bradbury2018jax}
+J.\ Bradbury et al.,
+``JAX: Composable Transformations of Python+NumPy Programs,''
+2018. \url{http://github.com/jax-ml/jax}
+
+\bibitem{liu2024kan}
+Z.\ Liu et al.,
+``KAN: Kolmogorov-Arnold Networks,''
+\emph{arXiv preprint arXiv:2404.19756}, 2024.
+
+\bibitem{bai2019onnx}
+J.\ Bai et al.,
+``ONNX: Open Neural Network Exchange,''
+2019. \url{https://github.com/onnx/onnx}
+
+\bibitem{katz2017reluplex}
+G.\ Katz et al.,
+``Reluplex: An Efficient SMT Solver for Verifying Deep Neural Networks,''
+\emph{CAV}, 2017.
+
+\bibitem{liu2021algorithms}
+C.\ Liu et al.,
+``Algorithms for Verifying Deep Neural Networks,''
+\emph{Foundations and Trends in Optimization}, 2021.
+
+\bibitem{lattuada2023verus}
+A.\ Lattuada et al.,
+``Verus: Verifying Rust Programs Using Linear Ghost Types,''
+\emph{OOPSLA}, 2023.
+
+\bibitem{ragan2013halide}
+J.\ Ragan-Kelley et al.,
+``Halide: A Language and Compiler for Optimizing Parallelism, Locality, and Recomputation in Image Processing Pipelines,''
+\emph{PLDI}, 2013.
+
+\bibitem{chen2018tvm}
+T.\ Chen et al.,
+``TVM: An Automated End-to-End Optimizing Compiler for Deep Learning,''
+\emph{OSDI}, 2018.
+
+\bibitem{ekkerd2026laws}
+T.\ B.\ Ekkerd,
+``The Complete Architecture of Natural Law --- 17 Laws in Three Parts,''
+USC Labs Technical Document, 2026.
+
+\end{thebibliography}
+
+\end{document}
