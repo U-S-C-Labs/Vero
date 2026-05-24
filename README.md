@@ -166,4 +166,4 @@ If you use Vero in your research, please cite:
 
 ## License
 
-Licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE) at your option.
+Licensed under the [GNU General Public License v2.0](LICENSE).
